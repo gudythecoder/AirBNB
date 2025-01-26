@@ -1,0 +1,179 @@
+---
+title: "R project"
+author: "Goodness Rex Nze-Igwe"
+date: "2024-12-11"
+output: html_document
+---
+
+## Data Cleaning and Restructuring
+
+### Load the Dataset
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(caret)
+```
+
+```{r}
+path <- "~/Downloads/AB_NYC_2019.csv"
+```
+
+```{r}
+# Load the dataset
+data <- read.csv(path)
+
+# View the structure of the data
+str(data)
+
+
+```
+
+### Handle Missing Values
+
+```{r}
+# Check for missing values
+colSums(is.na(data))
+
+# Impute missing values for `reviews_per_month` with 0
+data$reviews_per_month[is.na(data$reviews_per_month)] <- 0
+
+# Drop rows with missing `name` or `host_name`
+data <- data %>% drop_na(name, host_name)
+
+# Verify no missing values remain
+colSums(is.na(data))
+```
+
+### Remove Duplicates and Outliers
+
+```{r}
+# Remove duplicates
+data <- data %>% distinct()
+
+# Remove outliers in the `price` column
+data <- data %>% filter(price > 0 & price < quantile(price, 0.99))
+
+# Summary statistics after cleaning
+summary(data)
+```
+
+## Data Restructuring
+
+### Transforming Variables
+
+```{r}
+# Create a new column for price category
+data <- data %>% mutate(price_category = case_when(
+  price < 60~ "Low",
+  price < 120 ~ "Medium",
+  TRUE ~ "High"
+))
+
+
+
+# View the updated structure
+glimpse(data)
+```
+
+## Data Visualization
+
+### Visualize Price Distribution
+
+```{r}
+ggplot(data, aes(x = price)) +
+  geom_histogram(binwidth = 60, fill = "green", color = "black") +
+  labs(title = "Distribution of Prices", x = "Price", y = "Count") +
+  theme_minimal()
+```
+
+### Room Type by Neighborhood Group
+
+```{r}
+# Calculate average price by neighborhood
+avg_price <- data %>% 
+  group_by(neighbourhood) %>% 
+  summarize(avg_price = mean(price))
+
+
+ggplot(data, aes(x = neighbourhood_group, fill = room_type)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Room Types by Neighborhood Group", x = "Neighborhood Group", y = "Count", fill = "Room Type") +
+  theme_minimal()
+```
+
+### Average Price by Neighborhood
+
+```{r}
+avg_price <- data %>% 
+  group_by(neighbourhood) %>% 
+  summarize(avg_price = mean(price)) %>% 
+  mutate(category = if_else(rank(-avg_price) <= 8, neighbourhood, "Other"))
+
+ggplot(avg_price, aes(x = reorder(category, avg_price), y = avg_price)) +
+  geom_bar(stat = "identity", fill = "purple") +
+  coord_flip() +
+  labs(title = "Average Price by Neighborhood (Top 8+ Other)", x = "Neighborhood", y = "Average Price") +
+  theme_minimal()
+
+```
+
+## Prediction Model
+
+### Prepare Data for Machine Learning
+
+```{r}
+library(caret)
+
+# Select relevant columns and encode categorical variables
+data_ml <- data %>% select(price, minimum_nights, number_of_reviews, reviews_per_month, calculated_host_listings_count, availability_365, neighbourhood_group, room_type)
+data_ml <- data_ml %>% mutate(
+  neighbourhood_group = as.factor(neighbourhood_group),
+  room_type = as.factor(room_type)
+)
+
+# Split the data into training and testing sets
+set.seed(123)
+train_index <- createDataPartition(data_ml$price, p = 0.8, list = FALSE)
+train_data <- data_ml[train_index, ]
+test_data <- data_ml[-train_index, ]
+```
+
+### Train a Linear Regression Model
+
+```{r}
+train_data <- na.omit(train_data)  ## making sure there is no missing values in the trained data
+
+# Train the model
+model <- train(price ~ ., data = train_data, method = "lm")
+
+# Summary of the model
+summary(model)
+
+```
+
+### Evaluate the Model
+
+```{r}
+# Predict on test data
+predictions <- predict(model, newdata = test_data)
+
+# Calculate the Root Mean Squared Error
+rmse <- sqrt(mean((test_data$price - predictions)^2))
+
+# Calculate the Mean Absolute Error
+mae <- mean(abs(test_data$price - predictions))
+
+# Calculate the Mean Absolute Percentage Error
+mape <- mean(abs((test_data$price - predictions) / test_data$price)) * 100
+
+# Print results
+list(RMSE = rmse, MAE = mae, MAPE = mape)
+
+```
+
+## Conclusion
+
+This analysis focused on cleaning and restructuring the Airbnb_NYC_2019 dataset, visualizing key patterns with ggplot2, and developing a machine learning model to predict prices. Future improvements could involve experimenting with more sophisticated models or incorporating additional features.
+
